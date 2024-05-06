@@ -7,14 +7,14 @@
 #include "DAC8532.h"
 
 /**
- * DAC8532_Init(DAC8532 *dac, SPI_HandleTypeDef *spiHandle)
+ * DAC8532_Init(DAC8532 *dac, SPI_HandleTypeDef *spiHandle, GPIO_TypeDef *csPort, uint16_t csPin)
  * 
  * Initialize the passed DAC8532 struct with the provided STM32 SPI handler 
  * and send some initial dummy data (0x0000) to ensure SPI connection is working
  * 
  * Returns a HAL_StatusTypeDef indiciating the success of the operation.
 */
-HAL_StatusTypeDef DAC8532_Init(DAC8532 *dac, SPI_HandleTypeDef *spiHandle)
+HAL_StatusTypeDef DAC8532_Init(DAC8532 *dac, SPI_HandleTypeDef *spiHandle, GPIO_TypeDef *csPort, uint16_t csPin)
 {
     HAL_StatusTypeDef status;
 
@@ -22,6 +22,8 @@ HAL_StatusTypeDef DAC8532_Init(DAC8532 *dac, SPI_HandleTypeDef *spiHandle)
     dac->buffer[0] = 0x00;
     dac->buffer[1] = 0x00;
     dac->buffer[2] = 0x00;
+    dac->csPort = csPort;
+    dac->csPin = csPin;
 
     do
     {
@@ -53,9 +55,9 @@ HAL_StatusTypeDef DAC8532_Write_Data(DAC8532 *dac, uint8_t command, uint16_t dat
     dac->buffer[0] = command;
     dac->buffer[1] = data >> 8;
     dac->buffer[2] = data & 0xFF;
-    HAL_GPIO_WritePin(CS_GPIO_PORT, CS_GPIO_PIN, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(dac->csPort, dac->csPin, GPIO_PIN_RESET);
     HAL_StatusTypeDef status = HAL_SPI_Transmit(dac->spiHandle, dac->buffer, 3, HAL_MAX_DELAY);
-    HAL_GPIO_WritePin(CS_GPIO_PORT, CS_GPIO_PIN, GPIO_PIN_SET);
+    HAL_GPIO_WritePin(dac->csPort, dac->csPin, GPIO_PIN_SET);
     return status;
 }
 
@@ -63,7 +65,7 @@ HAL_StatusTypeDef DAC8532_Write_Data(DAC8532 *dac, uint8_t command, uint16_t dat
  * DAC8532_Output_Voltage(DAC8532 *dac, uint8_t command, float voltage)
  * 
  * Output a specific analog voltage between DAC_VREF volts and 0.0 volts
- * from the DAC8532 initialized by *dac using the provided 8 bit 
+ * from the DAC8532 initialized by *dac using the provided 8 bit
  * command. There are 4 acceptable 8 bit commands:
  *      - LOAD_CHANNEL_A    (0x10): Write to data buffer A and load DAC A
  *      - LOAD_CHANNEL_B    (0x24): Write to data buffer B and load DAC B
