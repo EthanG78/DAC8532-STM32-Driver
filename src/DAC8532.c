@@ -50,15 +50,63 @@ HAL_StatusTypeDef DAC8532_Init(DAC8532 *dac, SPI_HandleTypeDef *spiHandle, GPIO_
  * 
  * Returns a HAL_StatusTypeDef indicating the success of the operation.
 */
-HAL_StatusTypeDef DAC8532_Write_Data(DAC8532 *dac, uint8_t command, uint16_t data)
+__attribute__((optimize("-Ofast"))) HAL_StatusTypeDef DAC8532_Write_Data(DAC8532 *dac, uint8_t command, uint16_t data)
 {
+	// Populate the buffer of data to be sent
     dac->buffer[0] = command;
     dac->buffer[1] = data >> 8;
     dac->buffer[2] = data & 0xFF;
-    HAL_GPIO_WritePin(dac->csPort, dac->csPin, GPIO_PIN_RESET);
-    HAL_StatusTypeDef status = HAL_SPI_Transmit(dac->spiHandle, dac->buffer, 3, HAL_MAX_DELAY);
-    HAL_GPIO_WritePin(dac->csPort, dac->csPin, GPIO_PIN_SET);
-    return status;
+
+    // Grab the base address of the buffer
+	uint8_t *bufferAddr = dac->buffer;
+
+    // Bring the DAC chip select pin low
+    // by setting BR for pin number
+    dac->csPort->BSRR = (uint32_t)dac->csPin << 16;
+
+    // Enable SPI by setting SPE bit (bit 6)
+    dac->spiHandle->Instance->CR1 |= 0x0040;
+
+    // Send 3 bytes of data (command + data) to
+    // SPI Tx buffer via the data register
+    uint8_t nBytes = 3;
+    while (nBytes > 0)
+    {
+    	// Check if Tx buffer is empty (bit 1 of status register is set)
+    	if ((dac->spiHandle->Instance->SR & 0x0002) == 0x0002)
+    	{
+    		// dac->spiHandle->Instance->DR = dac->buffer[--nBytes];
+    		if (nBytes > 1)
+    		{
+    			// write on the data register in packing mode
+    			dac->spiHandle->Instance->DR = *((uint16_t *)bufferAddr);
+    			bufferAddr += sizeof(uint16_t);
+    			nBytes -= 2;
+    		}
+    		else
+    		{
+    			*((volatile uint8_t *)&dac->spiHandle->Instance->DR) = (*bufferAddr);
+    			bufferAddr++;
+    			nBytes--;
+    		}
+    	}
+    }
+
+    // Disable SPI using procedure outlined in
+    // Section 32.5.9 of Reference Manual 0385:
+    // Wait until FTLVL[1:0] is 0b00 and BSY is 0
+    while ((dac->spiHandle->Instance->SR & 0x1800) == 0x1800
+    		|| (dac->spiHandle->Instance->SR & 0x0080) == 0x0080)
+    	{};
+
+    // Enable SPI by clearing SPE bit (bit 6)
+    dac->spiHandle->Instance->CR1 &= 0xFFBF;
+
+    // Bring the DAC chip select pin high
+    // by setting BS for pin number
+    dac->csPort->BSRR = dac->csPin;
+
+    return HAL_OK;
 }
 
 /**
