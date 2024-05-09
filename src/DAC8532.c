@@ -57,9 +57,6 @@ __attribute__((optimize("-Ofast"))) HAL_StatusTypeDef DAC8532_Write_Data(DAC8532
     dac->buffer[1] = data >> 8;
     dac->buffer[2] = data & 0xFF;
 
-    // Grab the base address of the buffer
-	uint8_t *bufferAddr = dac->buffer;
-
     // Bring the DAC chip select pin low
     // by setting BR for pin number
     dac->csPort->BSRR = (uint32_t)dac->csPin << 16;
@@ -75,18 +72,15 @@ __attribute__((optimize("-Ofast"))) HAL_StatusTypeDef DAC8532_Write_Data(DAC8532
     	// Check if Tx buffer is empty (bit 1 of status register is set)
     	if ((dac->spiHandle->Instance->SR & 0x0002) == 0x0002)
     	{
-    		// dac->spiHandle->Instance->DR = dac->buffer[--nBytes];
     		if (nBytes > 1)
     		{
     			// write on the data register in packing mode
-    			dac->spiHandle->Instance->DR = *((uint16_t *)bufferAddr);
-    			bufferAddr += sizeof(uint16_t);
+    			dac->spiHandle->Instance->DR = *((uint16_t *)&dac->buffer[0]);
     			nBytes -= 2;
     		}
     		else
     		{
-    			*((volatile uint8_t *)&dac->spiHandle->Instance->DR) = (*bufferAddr);
-    			bufferAddr++;
+    			*((volatile uint8_t *)&dac->spiHandle->Instance->DR) = dac->buffer[2]; 
     			nBytes--;
     		}
     	}
@@ -96,8 +90,7 @@ __attribute__((optimize("-Ofast"))) HAL_StatusTypeDef DAC8532_Write_Data(DAC8532
     // Section 32.5.9 of Reference Manual 0385:
     // Wait until FTLVL[1:0] is 0b00 and BSY is 0
     while ((dac->spiHandle->Instance->SR & 0x1800) == 0x1800
-    		|| (dac->spiHandle->Instance->SR & 0x0080) == 0x0080)
-    	{};
+    		|| (dac->spiHandle->Instance->SR & 0x0080) == 0x0080);
 
     // Enable SPI by clearing SPE bit (bit 6)
     dac->spiHandle->Instance->CR1 &= 0xFFBF;
